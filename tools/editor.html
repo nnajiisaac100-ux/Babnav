@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Babnav — place editor</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+<style>
+  :root {
+    --blue-900:#0a2540; --blue-700:#123e7c; --blue-600:#1454b8;
+    --blue-100:#d9e5f7; --blue-050:#eef3fb; --line:#dde5f1; --grey-600:#5b6b83;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:20px;
+    font-family:"Segoe UI Variable Text","Segoe UI",system-ui,Arial,sans-serif;
+    color:var(--blue-900); background:var(--blue-050); font-size:15px; line-height:1.5;
+  }
+  h1 { font-size:21px; margin:0 0 3px; letter-spacing:-.02em; }
+  .sub { color:var(--grey-600); font-size:13.5px; margin:0 0 16px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+
+  .layout { display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; align-items:start; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; }
+
+  label { display:block; font-size:12px; color:var(--grey-600); margin-bottom:3px; }
+  input, select, textarea {
+    font:inherit; color:inherit; width:100%;
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:#fff;
+  }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--blue-600); outline-offset:1px; }
+  textarea { resize:vertical; min-height:64px; }
+
+  button {
+    font:inherit; border:0; border-radius:8px; padding:9px 14px;
+    background:var(--blue-600); color:#fff; cursor:pointer;
+  }
+  button:hover { background:var(--blue-700); }
+  button.ghost { background:#fff; color:var(--blue-900); border:1px solid var(--line); }
+  button.ghost:hover { background:var(--blue-050); }
+  button.danger { background:#fff; color:#b3261e; border:1px solid #f0c4c1; }
+  button.danger:hover { background:#fdf0ef; }
+  button:disabled { background:var(--blue-100); color:var(--grey-600); cursor:not-allowed; }
+
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .field { margin-bottom:11px; }
+
+  .list { max-height:520px; overflow:auto; margin-top:10px; }
+  .item {
+    display:flex; align-items:center; gap:8px;
+    width:100%; text-align:left; background:#fff; color:inherit;
+    border:1px solid var(--line); border-radius:9px;
+    padding:8px 10px; margin-bottom:6px; cursor:pointer; font-size:13.5px;
+  }
+  .item:hover { border-color:var(--blue-600); background:var(--blue-050); }
+  .item.on { border-color:var(--blue-600); background:var(--blue-050); font-weight:600; }
+  .item .dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+  .item .warn { margin-left:auto; color:#b3261e; font-size:15px; }
+
+  #map { height:380px; border-radius:10px; border:1px solid var(--line); margin-bottom:12px; }
+  .marker-dot {
+    display:block; width:20px; height:20px; border-radius:50%;
+    background:var(--blue-600); border:3px solid #fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+
+  .note {
+    background:#fff8e6; border:1px solid #f0dca8; border-radius:10px;
+    padding:11px 13px; font-size:13px; color:#6a4e07; margin-bottom:14px;
+  }
+  .ok { background:#eaf6ef; border-color:#bcdfc9; color:#1c5c34; }
+  .info { background:var(--blue-050); border-color:var(--blue-100); color:var(--blue-700); }
+
+  .issues { font-size:13px; margin:0; padding-left:18px; }
+  .issues li { margin-bottom:3px; }
+
+  textarea#output {
+    font-family:Consolas,"Courier New",monospace; font-size:12px;
+    height:300px; white-space:pre; overflow:auto;
+  }
+  .muted { color:var(--grey-600); font-size:12px; }
+  .draft { font-size:12px; color:var(--grey-600); }
+</style>
+</head>
+<body>
+
+<h1>Place editor</h1>
+<p class="sub">
+  Runs on your machine. No server, no login, nothing published until you paste
+  the result back into <code>js/data.js</code>.
+</p>
+
+<div class="note" id="load-state">Loading current places…</div>
+
+<div class="layout">
+
+  <!-- ============ LEFT: the list ============ -->
+  <div class="panel">
+    <div class="row" style="margin-bottom:10px">
+      <button id="add-place" style="flex:1">Add a place</button>
+    </div>
+    <input id="filter" placeholder="Find a place…">
+    <div class="list" id="list"></div>
+    <p class="draft" id="draft-state"></p>
+  </div>
+
+  <!-- ============ RIGHT: map, form, export ============ -->
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Position</h2>
+      <p class="muted" style="margin-bottom:10px">
+        Click the map to move the selected place, or drag its marker. Zoom in
+        far enough to see the building outline before you place it.
+      </p>
+      <div id="map"></div>
+
+      <div id="form" hidden>
+        <h2>Details</h2>
+
+        <div class="field">
+          <label for="f-name">Name</label>
+          <input id="f-name" placeholder="Laz Otti Memorial Library">
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="f-id">Id</label>
+            <input id="f-id" placeholder="laz-otti-library">
+          </div>
+          <div class="field">
+            <label for="f-category">Category</label>
+            <select id="f-category"></select>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="f-lat">Latitude</label>
+            <input id="f-lat" inputmode="decimal">
+          </div>
+          <div class="field">
+            <label for="f-lng">Longitude</label>
+            <input id="f-lng" inputmode="decimal">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="f-description">Description — one plain sentence, only what you know</label>
+          <textarea id="f-description" placeholder="Study spaces and book collections."></textarea>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="f-keywords">Search keywords, comma separated</label>
+            <input id="f-keywords" placeholder="books, study, reading room">
+          </div>
+          <div class="field">
+            <label for="f-hours">Opening hours (leave blank if unsure)</label>
+            <input id="f-hours" placeholder="Mon-Fri 08:00-18:00">
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="row" style="gap:7px; color:var(--blue-900); font-size:13.5px">
+            <input type="checkbox" id="f-verified" style="width:auto">
+            I have checked this position myself
+          </label>
+        </div>
+
+        <div class="row">
+          <button class="ghost" id="dup">Duplicate</button>
+          <button class="danger" id="remove">Delete this place</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Checks</h2>
+      <div id="issues"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Export</h2>
+      <p class="muted" style="margin-bottom:10px">
+        Replace the whole contents of <code>js/data.js</code> with this.
+        It includes CAMPUS, CATEGORIES and PLACES.
+      </p>
+      <div class="row" style="margin-bottom:10px">
+        <button id="generate">Generate data.js</button>
+        <button class="ghost" id="copy">Copy</button>
+        <button class="ghost" id="download">Download data.js</button>
+        <button class="ghost" id="discard">Discard my draft</button>
+      </div>
+      <textarea id="output" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- Loading the real data file gives us PLACES, CATEGORIES and CAMPUS as globals -->
+<script src="../js/data.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script>
+/*
+  editor.js (inline)
+
+  Working copy lives in `places`. Nothing here touches js/data.js on disk —
+  browsers cannot write to your file system, and that is a feature: you always
+  paste changes back deliberately.
+
+  A draft is kept in localStorage so a refresh or a closed tab does not lose
+  an afternoon of work. It is your browser's storage, on your machine, and
+  "Discard my draft" reloads whatever js/data.js currently says.
+*/
+
+const DRAFT_KEY = "babnav.editor.draft.v1";
+
+let places = [];
+let selectedId = null;
+let map, marker;
+
+/* ---------- Loading ---------- */
+
+function loadFromFile() {
+  return (typeof PLACES !== "undefined") ? JSON.parse(JSON.stringify(PLACES)) : [];
+}
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (err) {
+    return null;   // corrupted draft: ignore it rather than break
+  }
+}
+
+function saveDraft() {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(places));
+    document.getElementById("draft-state").textContent =
+      "Draft saved in this browser · " + new Date().toLocaleTimeString();
+  } catch (err) {
+    document.getElementById("draft-state").textContent =
+      "Could not save a draft — this browser is blocking storage. Export before closing the tab.";
+  }
+}
+
+/* ---------- Helpers ---------- */
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+             .replace(/^-|-$/g, "").slice(0, 40) || "place";
+}
+
+function uniqueId(base, ignoreId) {
+  let id = base, n = 2;
+  while (places.some(function (p) { return p.id === id && p.id !== ignoreId; })) {
+    id = base + "-" + n;
+    n += 1;
+  }
+  return id;
+}
+
+function categoryColour(id) {
+  const map = {
+    academic: "#1454b8", residential: "#6b4fc9", food: "#b9660b",
+    health: "#d0353b", religious: "#0e7c86", sports: "#12855a",
+    admin: "#46587a", transport: "#9a4b12", services: "#8a2f8f",
+    recreation: "#3b7a3b"
+  };
+  return map[id] || "#5b6b83";
+}
+
+function selected() {
+  return places.find(function (p) { return p.id === selectedId; }) || null;
+}
+
+function hasCoords(p) {
+  return typeof p.lat === "number" && typeof p.lng === "number" &&
+         !isNaN(p.lat) && !isNaN(p.lng);
+}
+
+/* ---------- The list ---------- */
+
+function renderList() {
+  const needle = document.getElementById("filter").value.trim().toLowerCase();
+  const box = document.getElementById("list");
+
+  const shown = places.filter(function (p) {
+    return !needle || p.name.toLowerCase().indexOf(needle) > -1;
+  });
+
+  box.innerHTML = "";
+
+  shown.forEach(function (place) {
+    const button = document.createElement("button");
+    button.className = "item ghost" + (place.id === selectedId ? " on" : "");
+    button.dataset.id = place.id;
+
+    const problem = !hasCoords(place) || !place.name.trim();
+
+    button.innerHTML =
+      '<span class="dot" style="background:' + categoryColour(place.category) + '"></span>' +
+      "<span>" + (place.name || "(no name)") + "</span>" +
+      (problem ? '<span class="warn" title="Missing name or position">!</span>' : "");
+
+    box.appendChild(button);
+  });
+
+  if (shown.length === 0) {
+    box.innerHTML = '<p class="muted">Nothing matches that.</p>';
+  }
+}
+
+/* ---------- The form ---------- */
+
+function fillCategories() {
+  const select = document.getElementById("f-category");
+  select.innerHTML = "";
+
+  const list = (typeof CATEGORIES !== "undefined")
+    ? CATEGORIES.filter(function (c) { return c.id !== "all"; })
+    : [];
+
+  list.forEach(function (c) {
+    const option = document.createElement("option");
+    option.value = c.id;
+    option.textContent = c.label;
+    select.appendChild(option);
+  });
+}
+
+function renderForm() {
+  const place = selected();
+  document.getElementById("form").hidden = !place;
+  if (!place) { showMarker(null); return; }
+
+  document.getElementById("f-name").value = place.name || "";
+  document.getElementById("f-id").value = place.id || "";
+  document.getElementById("f-category").value = place.category || "academic";
+  document.getElementById("f-lat").value = hasCoords(place) ? place.lat : "";
+  document.getElementById("f-lng").value = hasCoords(place) ? place.lng : "";
+  document.getElementById("f-description").value = place.description || "";
+  document.getElementById("f-keywords").value = (place.keywords || []).join(", ");
+  document.getElementById("f-hours").value = place.hours || "";
+  document.getElementById("f-verified").checked = !!place.verified;
+
+  showMarker(place);
+}
+
+// Read every field back into the working copy.
+function readForm() {
+  const place = selected();
+  if (!place) return;
+
+  place.name = document.getElementById("f-name").value;
+  place.category = document.getElementById("f-category").value;
+  place.description = document.getElementById("f-description").value;
+  place.hours = document.getElementById("f-hours").value;
+  place.verified = document.getElementById("f-verified").checked;
+
+  place.keywords = document.getElementById("f-keywords").value
+    .split(",").map(function (k) { return k.trim(); })
+    .filter(function (k) { return k.length > 0; });
+
+  const lat = parseFloat(document.getElementById("f-lat").value);
+  const lng = parseFloat(document.getElementById("f-lng").value);
+  place.lat = isNaN(lat) ? null : lat;
+  place.lng = isNaN(lng) ? null : lng;
+
+  // Changing an id breaks anyone's saved places, so warn rather than block.
+  const wanted = document.getElementById("f-id").value.trim();
+  if (wanted && wanted !== place.id) {
+    const free = uniqueId(slugify(wanted), place.id);
+    selectedId = place.id = free;
+  }
+
+  saveDraft();
+  renderList();
+  renderChecks();
+  showMarker(place);
+}
+
+/* ---------- The map ---------- */
+
+function startMap() {
+  const centre = (typeof CAMPUS !== "undefined") ? CAMPUS.center : [6.894, 3.7187];
+
+  map = L.map("map", { center: centre, zoom: 16, maxZoom: 19 });
+
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  map.on("click", function (event) {
+    if (!selected()) return;
+    document.getElementById("f-lat").value = event.latlng.lat.toFixed(6);
+    document.getElementById("f-lng").value = event.latlng.lng.toFixed(6);
+    readForm();
+  });
+}
+
+function showMarker(place) {
+  if (marker) { map.removeLayer(marker); marker = null; }
+  if (!place || !hasCoords(place)) return;
+
+  marker = L.marker([place.lat, place.lng], {
+    draggable: true,
+    icon: L.divIcon({
+      className: "",
+      html: '<span class="marker-dot"></span>',
+      iconSize: null,
+      iconAnchor: [10, 10]
+    })
+  }).addTo(map);
+
+  marker.on("dragend", function () {
+    const position = marker.getLatLng();
+    document.getElementById("f-lat").value = position.lat.toFixed(6);
+    document.getElementById("f-lng").value = position.lng.toFixed(6);
+    readForm();
+  });
+
+  map.setView([place.lat, place.lng], Math.max(map.getZoom(), 17));
+}
+
+/* ---------- Checks ---------- */
+
+function renderChecks() {
+  const problems = [];
+
+  const noCoords = places.filter(function (p) { return !hasCoords(p); });
+  if (noCoords.length) {
+    problems.push(noCoords.length + " place" + (noCoords.length === 1 ? " has" : "s have") +
+                  " no position: " + noCoords.map(function (p) { return p.name; }).join(", "));
+  }
+
+  const noName = places.filter(function (p) { return !String(p.name).trim(); });
+  if (noName.length) problems.push(noName.length + " place has no name");
+
+  const ids = places.map(function (p) { return p.id; });
+  const dupes = ids.filter(function (id, i) { return ids.indexOf(id) !== i; });
+  if (dupes.length) problems.push("Duplicate ids: " + [...new Set(dupes)].join(", "));
+
+  const noDesc = places.filter(function (p) { return !String(p.description || "").trim(); }).length;
+  const unverified = places.filter(function (p) { return !p.verified; }).length;
+
+  let html = "";
+
+  if (problems.length) {
+    html += '<div class="note"><strong>Fix before exporting</strong><ul class="issues">' +
+            problems.map(function (t) { return "<li>" + t + "</li>"; }).join("") +
+            "</ul></div>";
+  } else {
+    html += '<div class="note ok">' + places.length +
+            " places, no blocking problems.</div>";
+  }
+
+  html += '<div class="note info">' + noDesc + " without a description \u00B7 " +
+          unverified + " not yet checked by you. Neither stops the app working — " +
+          "Babnav shows the badge honestly.</div>";
+
+  document.getElementById("issues").innerHTML = html;
+}
+
+/* ---------- Export ---------- */
+
+function toSource() {
+  const campus = (typeof CAMPUS !== "undefined") ? CAMPUS : null;
+  const categories = (typeof CATEGORIES !== "undefined") ? CATEGORIES : [];
+
+  // JSON.stringify puts every number of a nested array on its own line, which
+  // turns a coordinate pair into six lines. Collapse short numeric arrays back
+  // onto one line so the exported file stays readable.
+  function tidy(value) {
+    return JSON.stringify(value, null, 2)
+      .replace(/\[\s+((?:-?[\d.]+,?\s*)+)\]/g, function (whole, inner) {
+        return "[" + inner.replace(/\s+/g, " ").trim() + "]";
+      });
+  }
+
+  let out = "/* js/data.js — edited with tools/editor.html on " +
+            new Date().toISOString().slice(0, 10) + ".\n\n" +
+            "   verified: true  means a person checked this position on the ground.\n" +
+            "   source: \"osm\"    means it came from OpenStreetMap and has not been\n" +
+            "                   checked yet. Map data (c) OpenStreetMap\n" +
+            "                   contributors, ODbL.\n" +
+            "   no source       means a placeholder position that is not real.\n\n" +
+            "   Edit this file by hand, or reopen tools/editor.html. */\n\n";
+
+  if (campus) {
+    out += "const CAMPUS = " + tidy(campus) + ";\n\n";
+  }
+
+  out += "const CATEGORIES = [\n" + categories.map(function (c) {
+    return "  " + JSON.stringify(c);
+  }).join(",\n") + "\n];\n\n";
+
+  out += "const PLACES = [\n" + places.map(function (p) {
+    let body = "  {\n";
+    body += '    id: ' + JSON.stringify(p.id) + ",\n";
+    body += '    name: ' + JSON.stringify(p.name) + ",\n";
+    body += '    category: ' + JSON.stringify(p.category) + ",\n";
+    body += "    lat: " + (hasCoords(p) ? p.lat : null) +
+            ", lng: " + (hasCoords(p) ? p.lng : null) + ",\n";
+    body += '    description: ' + JSON.stringify(p.description || "") + ",\n";
+    body += "    keywords: " + JSON.stringify(p.keywords || []) + ",\n";
+    if (p.hours) body += '    hours: ' + JSON.stringify(p.hours) + ",\n";
+    if (p.source) body += '    source: ' + JSON.stringify(p.source) + ",\n";
+    if (p.osmId) body += '    osmId: ' + JSON.stringify(p.osmId) + ",\n";
+    body += "    verified: " + (p.verified ? "true" : "false") + "\n";
+    body += "  }";
+    return body;
+  }).join(",\n") + "\n];\n";
+
+  return out;
+}
+
+/* ---------- Events ---------- */
+
+document.getElementById("list").addEventListener("click", function (event) {
+  const item = event.target.closest(".item");
+  if (!item) return;
+  selectedId = item.dataset.id;
+  renderList();
+  renderForm();
+});
+
+["f-name", "f-id", "f-category", "f-lat", "f-lng",
+ "f-description", "f-keywords", "f-hours", "f-verified"].forEach(function (id) {
+  document.getElementById(id).addEventListener("change", readForm);
+});
+
+document.getElementById("f-name").addEventListener("blur", function () {
+  const place = selected();
+  if (!place) return;
+  // A new place gets its id from its name, once, so you rarely type an id.
+  if (place.id.indexOf("new-place") === 0 && place.name.trim()) {
+    selectedId = place.id = uniqueId(slugify(place.name), place.id);
+    renderForm();
+    renderList();
+    saveDraft();
+  }
+});
+
+document.getElementById("filter").addEventListener("input", renderList);
+
+document.getElementById("add-place").addEventListener("click", function () {
+  const centre = map.getCenter();
+  const place = {
+    id: uniqueId("new-place"),
+    name: "",
+    category: "academic",
+    lat: parseFloat(centre.lat.toFixed(6)),
+    lng: parseFloat(centre.lng.toFixed(6)),
+    description: "",
+    keywords: [],
+    verified: false
+  };
+  places.push(place);
+  selectedId = place.id;
+  saveDraft();
+  renderList();
+  renderForm();
+  renderChecks();
+  document.getElementById("f-name").focus();
+});
+
+document.getElementById("dup").addEventListener("click", function () {
+  const place = selected();
+  if (!place) return;
+  const copy = JSON.parse(JSON.stringify(place));
+  copy.id = uniqueId(slugify(place.name || "place"));
+  copy.name = place.name + " (copy)";
+  copy.verified = false;
+  places.push(copy);
+  selectedId = copy.id;
+  saveDraft(); renderList(); renderForm(); renderChecks();
+});
+
+document.getElementById("remove").addEventListener("click", function () {
+  const place = selected();
+  if (!place) return;
+  if (!confirm("Delete " + (place.name || "this place") + "? This only changes your draft.")) return;
+  places = places.filter(function (p) { return p.id !== place.id; });
+  selectedId = null;
+  saveDraft(); renderList(); renderForm(); renderChecks();
+});
+
+document.getElementById("generate").addEventListener("click", function () {
+  document.getElementById("output").value = toSource();
+});
+
+document.getElementById("copy").addEventListener("click", function () {
+  const out = document.getElementById("output");
+  if (!out.value) out.value = toSource();
+  out.select();
+  navigator.clipboard.writeText(out.value).then(function () {
+    document.getElementById("copy").textContent = "Copied";
+    setTimeout(function () { document.getElementById("copy").textContent = "Copy"; }, 1500);
+  }).catch(function () {
+    document.getElementById("copy").textContent = "Select the text and copy it";
+  });
+});
+
+document.getElementById("download").addEventListener("click", function () {
+  const text = document.getElementById("output").value || toSource();
+  const blob = new Blob([text], { type: "text/javascript" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "data.js";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("discard").addEventListener("click", function () {
+  if (!confirm("Throw away your draft and reload what js/data.js currently says?")) return;
+  try { localStorage.removeItem(DRAFT_KEY); } catch (err) { /* nothing to do */ }
+  places = loadFromFile();
+  selectedId = null;
+  renderList(); renderForm(); renderChecks();
+  document.getElementById("draft-state").textContent = "Draft discarded.";
+});
+
+/* ---------- Start ---------- */
+
+function init() {
+  const banner = document.getElementById("load-state");
+
+  if (typeof PLACES === "undefined") {
+    banner.innerHTML = "<strong>Could not read js/data.js.</strong> Open this " +
+      "page with Live Server from inside the Babnav folder, so that " +
+      "<code>../js/data.js</code> resolves.";
+    return;
+  }
+
+  const draft = loadDraft();
+
+  if (draft && draft.length) {
+    places = draft;
+    banner.className = "note info";
+    banner.innerHTML = "<strong>Draft restored.</strong> " + draft.length +
+      " places from your last session in this browser. " +
+      "js/data.js on disk has " + PLACES.length +
+      " — the file is unchanged until you paste an export into it. " +
+      "Use <em>Discard my draft</em> to start again from the file.";
+  } else {
+    places = loadFromFile();
+    banner.className = "note ok";
+    banner.innerHTML = "<strong>Loaded " + places.length +
+      " places from js/data.js.</strong> Edits stay in this browser until you export.";
+  }
+
+  fillCategories();
+  startMap();
+  renderList();
+  renderForm();
+  renderChecks();
+}
+
+init();
+</script>
+</body>
+</html>

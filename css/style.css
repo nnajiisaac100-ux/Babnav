@@ -1,0 +1,847 @@
+/* =========================================================
+   Babnav — style.css
+   Map-first shell: the map fills the screen, everything else
+   floats on top of it.
+
+   1. Tokens
+   2. Base
+   3. App shell + map
+   4. Floating chrome (brand, search, chips, tools)
+   5. Pins
+   6. Bottom sheet
+   7. Cards, chips, empty states
+   8. Directions placeholder
+   9. Failure + capture panels
+   10. Desktop layout
+   ========================================================= */
+
+/* ---------- 1. Tokens ---------- */
+:root {
+  --blue-900:#0a2540;
+  --blue-700:#123e7c;
+  --blue-600:#1454b8;
+  --blue-100:#d9e5f7;
+  --blue-050:#eef3fb;
+  --white:#ffffff;
+  --grey-600:#5b6b83;
+  --line:#dde5f1;
+
+  --c-academic:#1454b8;
+  --c-residential:#6b4fc9;
+  --c-food:#b9660b;
+  --c-health:#d0353b;
+  --c-religious:#0e7c86;
+  --c-sports:#12855a;
+  --c-admin:#46587a;
+  --c-transport:#9a4b12;
+  --c-services:#8a2f8f;
+  --c-recreation:#3b7a3b;
+
+  --radius:12px;
+  --shadow-card:0 1px 2px rgba(10,37,64,.06);
+  --shadow-pop:0 8px 24px rgba(10,37,64,.16);
+  --shadow-sheet:0 -6px 24px rgba(10,37,64,.14);
+
+  /* Sheet geometry. JS reads and writes --sheet-h. */
+  --sheet-peek:210px;
+  --sheet-h:210px;
+  --safe-bottom:env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------- 2. Base ---------- */
+* { box-sizing:border-box; }
+
+[hidden] { display:none !important; }
+
+html, body {
+  height:100%;
+  margin:0;
+  overflow:hidden;              /* the sheet scrolls, the page does not */
+  overscroll-behavior:none;
+}
+
+body {
+  font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,
+              "Helvetica Neue",Arial,sans-serif;
+  color:var(--blue-900);
+  background:var(--blue-050);
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+button, input { font:inherit; color:inherit; }
+h1, h2, h3, p { margin:0; }
+
+.visually-hidden {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+:focus-visible { outline:3px solid var(--blue-600); outline-offset:2px; border-radius:6px; }
+
+/* ---------- 3. Shell + map ---------- */
+.app { position:relative; height:100dvh; height:100vh; overflow:hidden; }
+
+#map-canvas { position:absolute; inset:0; background:#e9eee6; }
+
+.leaflet-container { font:inherit; background:#e9eee6; }
+.leaflet-control-attribution { font-size:10.5px; }
+
+/* Leaflet puts its own controls at z-index 1000, so our chrome sits above
+   that. Order: sheet on top, then floating search, then map tools. */
+.leaflet-top.leaflet-left {
+  top:auto;
+  bottom:calc(var(--sheet-h) + 58px);
+  transition:bottom .18s ease;
+}
+
+/* Keep the required attribution visible instead of hiding it behind the sheet */
+.leaflet-bottom.leaflet-right {
+  bottom:calc(var(--sheet-h) + 4px);
+  transition:bottom .18s ease;
+}
+
+/* ---------- 4. Floating chrome ---------- */
+.float-top {
+  position:absolute;
+  top:calc(12px + env(safe-area-inset-top, 0px));
+  left:12px; right:12px;
+  z-index:1100;
+  display:flex; flex-direction:column; gap:10px;
+  pointer-events:none;            /* clicks pass through the gaps to the map */
+}
+
+.float-top > * { pointer-events:auto; }
+
+.bar { display:flex; align-items:center; gap:10px; }
+
+.brand {
+  display:flex; align-items:center; justify-content:center;
+  width:44px; height:44px; flex:0 0 auto;
+  border-radius:12px;
+  background:var(--blue-600);
+  color:var(--white);
+  box-shadow:var(--shadow-pop);
+}
+
+.search {
+  position:relative;
+  display:flex; align-items:center;
+  flex:1; min-width:0; height:44px;
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:0 8px 0 14px;
+  box-shadow:var(--shadow-pop);
+}
+
+.search:focus-within { border-color:var(--blue-600); box-shadow:0 0 0 3px rgba(20,84,184,.16); }
+
+.search__icon { display:flex; opacity:.55; flex:0 0 auto; }
+.search__input { flex:1; min-width:0; border:0; background:transparent; padding:0 10px; outline:none; }
+.search__input::-webkit-search-cancel-button { display:none; }
+
+.search__clear {
+  border:0; background:var(--blue-600); color:var(--white);
+  border-radius:999px; padding:6px 12px; font-size:12.5px; cursor:pointer;
+  flex:0 0 auto;
+}
+.search__clear:hover { background:var(--blue-700); }
+
+.chips {
+  display:flex; gap:6px;
+  overflow-x:auto;
+  padding:2px 0 4px;
+  scrollbar-width:none;
+}
+.chips::-webkit-scrollbar { display:none; }
+
+.chip {
+  flex:0 0 auto;
+  border:1px solid var(--line);
+  background:var(--white);
+  border-radius:999px;
+  padding:7px 13px;
+  font-size:12.5px;
+  cursor:pointer;
+  box-shadow:var(--shadow-card);
+  white-space:nowrap;
+}
+.chip:hover { border-color:var(--blue-600); }
+.chip[aria-pressed="true"] { background:var(--blue-600); border-color:var(--blue-600); color:var(--white); }
+
+/* Map tool buttons, stacked on the right above the sheet */
+.tools {
+  position:absolute;
+  right:12px;
+  bottom:calc(var(--sheet-h) + 12px);
+  z-index:1050;
+  display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  transition:bottom .18s ease;
+}
+
+.tool {
+  display:flex; align-items:center; gap:6px;
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:9px 12px;
+  font-size:12.5px;
+  cursor:pointer;
+  box-shadow:var(--shadow-pop);
+  white-space:nowrap;
+}
+.tool:hover { border-color:var(--blue-600); }
+.tool[aria-pressed="true"] { background:var(--blue-600); border-color:var(--blue-600); color:var(--white); }
+
+/* ---------- 5. Pins ---------- */
+.leaflet-div-icon.pin-icon {
+  background:none; border:0;
+  width:auto !important; height:auto !important;
+}
+
+.pin {
+  display:flex; align-items:center; gap:6px;
+  background:var(--white);
+  border:1px solid var(--line);
+  border-left:4px solid var(--pin,var(--blue-600));
+  border-radius:8px;
+  padding:5px 9px 5px 7px;
+  font-size:12.5px;
+  font-weight:600;
+  white-space:nowrap;
+  cursor:pointer;
+  box-shadow:var(--shadow-card);
+  color:var(--blue-900);
+}
+.pin:hover { box-shadow:var(--shadow-pop); }
+
+.pin__dot { width:8px; height:8px; border-radius:50%; background:var(--pin,var(--blue-600)); flex:0 0 auto; }
+
+.pin--unverified { border-style:dashed; }
+
+.pin.is-selected {
+  background:var(--blue-600); color:var(--white);
+  border-color:var(--blue-600); box-shadow:var(--shadow-pop);
+}
+.pin.is-selected .pin__dot { background:var(--white); }
+
+/* ---------- 6. Bottom sheet ---------- */
+.sheet {
+  position:absolute;
+  left:0; right:0; bottom:0;
+  z-index:1200;
+  height:var(--sheet-h);
+  display:flex; flex-direction:column;
+  background:var(--white);
+  border-radius:18px 18px 0 0;
+  box-shadow:var(--shadow-sheet);
+  touch-action:none;             /* we handle the drag ourselves */
+}
+
+.sheet.is-animating { transition:height .22s cubic-bezier(.22,.61,.36,1); }
+
+.sheet__grip {
+  flex:0 0 auto;
+  padding:9px 14px 6px;
+  cursor:grab;
+  user-select:none;
+}
+.sheet__grip:active { cursor:grabbing; }
+
+.sheet__bar { width:38px; height:4px; border-radius:9px; background:#c9d4e2; margin:0 auto; }
+
+.sheet__head {
+  flex:0 0 auto;
+  display:flex; align-items:center; gap:10px;
+  padding:4px 16px 10px;
+}
+
+.sheet__title { font-size:17px; font-weight:700; letter-spacing:-.01em; }
+.sheet__count { font-size:12.5px; color:var(--grey-600); margin-left:auto; }
+
+.seg { display:flex; gap:4px; padding:0 16px 10px; flex:0 0 auto; }
+
+.seg__btn {
+  border:1px solid var(--line);
+  background:var(--white);
+  border-radius:999px;
+  padding:6px 14px;
+  font-size:13px;
+  cursor:pointer;
+}
+.seg__btn[aria-current="page"] {
+  background:var(--blue-050);
+  border-color:var(--blue-100);
+  color:var(--blue-700);
+  font-weight:650;
+}
+
+.sheet__body {
+  flex:1 1 auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
+  padding:0 16px calc(20px + var(--safe-bottom));
+}
+
+/* ---------- 7. Cards ---------- */
+.notice {
+  margin:0 0 10px;
+  padding:9px 12px;
+  background:#fff8e6;
+  border:1px solid #f0dca8;
+  border-radius:10px;
+  font-size:12.5px;
+  color:#6a4e07;
+  line-height:1.45;
+}
+
+.cards { display:flex; flex-direction:column; gap:8px; }
+
+.card {
+  display:flex; align-items:flex-start; gap:10px;
+  width:100%; text-align:left;
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:11px 12px;
+  cursor:pointer;
+}
+.card:hover { border-color:var(--blue-600); background:var(--blue-050); }
+
+.card.is-selected {
+  border-color:var(--blue-600);
+  background:var(--blue-050);
+  box-shadow:inset 3px 0 0 var(--blue-600);
+}
+
+.card__icon {
+  display:grid; place-items:center;
+  flex:0 0 auto;
+  width:32px; height:32px;
+  border-radius:9px;
+  background:var(--blue-050);
+  font-size:15px;
+}
+
+.card__body { min-width:0; }
+.card__name { display:block; font-weight:650; font-size:14px; }
+.card__meta { display:block; font-size:12.5px; color:var(--grey-600); margin-top:1px; }
+.card__cat { color:var(--pin,var(--blue-600)); font-weight:600; }
+
+.badge {
+  display:inline-block;
+  margin-left:6px;
+  padding:1px 6px;
+  border-radius:999px;
+  background:#fff3d6;
+  border:1px solid #eddba4;
+  color:#6a4e07;
+  font-size:10.5px;
+  font-weight:600;
+  vertical-align:1px;
+}
+
+.badge--osm {
+  background:#e9f1fd;
+  border-color:#c3d9f6;
+  color:#123e7c;
+}
+
+.empty { padding:18px 4px; font-size:13.5px; color:var(--grey-600); }
+
+/* ---------- 8. Directions placeholder ---------- */
+.stub { margin:2px 0 14px; font-size:13.5px; color:var(--grey-600); }
+
+.stub-form { display:flex; flex-direction:column; gap:8px; }
+
+.stub-field {
+  display:flex; justify-content:space-between;
+  border:1px dashed var(--line);
+  border-radius:10px;
+  padding:12px;
+  color:var(--grey-600);
+  font-size:13.5px;
+}
+
+.stub-button {
+  border:0; border-radius:10px; padding:12px;
+  background:var(--blue-100); color:var(--grey-600);
+  cursor:not-allowed;
+}
+
+/* ---------- 9. Capture + failure ---------- */
+.capture {
+  width:min(300px,72vw);
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px;
+  box-shadow:var(--shadow-pop);
+  font-size:12.5px;
+  text-align:left;
+}
+
+.capture__hint { color:var(--grey-600); }
+
+.capture__code {
+  display:block;
+  margin:8px 0;
+  padding:8px;
+  background:var(--blue-050);
+  border-radius:6px;
+  font-family:Consolas,"Courier New",monospace;
+  font-size:11.5px;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+
+.capture__copy {
+  border:0; background:var(--blue-600); color:var(--white);
+  border-radius:6px; padding:7px 12px; cursor:pointer;
+}
+
+.stamp {
+  position:absolute;
+  left:12px;
+  bottom:calc(var(--sheet-h) + 12px);
+  z-index:1050;
+  background:rgba(255,255,255,.92);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:4px 8px;
+  font-size:11.5px;
+  color:var(--grey-600);
+  transition:bottom .18s ease;
+  max-width:52vw;
+}
+
+.failure {
+  position:absolute; inset:0; z-index:1300;
+  display:grid; place-content:center; gap:6px;
+  text-align:center; padding:24px;
+  background:var(--blue-050);
+  font-size:14px; color:var(--grey-600);
+}
+.failure strong { color:var(--blue-900); display:block; margin-bottom:4px; }
+
+/* On a narrow screen the pin labels collide, so show compact dots. The
+   names are all in the sheet directly below anyway. */
+@media (max-width:620px) {
+  .pin { padding:7px; border-left-width:1px; }
+  .pin__label { display:none; }
+}
+
+/* ---------- 10. Desktop ---------- */
+@media (min-width:961px) {
+  /* The sheet stops being a sheet and becomes a floating side panel. */
+  .sheet {
+    top:74px; bottom:20px;
+    left:20px; right:auto;
+    width:380px;
+    height:auto !important;
+    border-radius:14px;
+    box-shadow:var(--shadow-pop);
+  }
+
+  .sheet__grip { display:none; }
+  .sheet__head { padding-top:14px; }
+
+  .float-top { left:20px; right:20px; }
+  .bar { max-width:none; }
+  .search { max-width:520px; }
+
+  /* Chips move into the panel's flow visually by sitting beside it */
+  .float-top .chips { margin-left:434px; }
+
+  .tools { bottom:24px; }
+  .stamp { left:420px; bottom:24px; max-width:none; }
+  .leaflet-top.leaflet-left { top:auto; bottom:70px; left:420px; }
+  .leaflet-bottom.leaflet-right { bottom:0; }
+}
+
+/* =========================================================
+   Phases 4–6 additions: search highlight, detail view, routing
+   ========================================================= */
+
+/* ---- Phase 4: which part of the name matched ---- */
+mark {
+  background:#fdf0c8;
+  color:inherit;
+  border-radius:3px;
+  padding:0 1px;
+}
+
+/* ---- Back button in the sheet header ---- */
+.back {
+  display:flex; align-items:center; justify-content:center;
+  width:30px; height:30px; flex:0 0 auto;
+  border:1px solid var(--line); background:var(--white);
+  border-radius:8px; cursor:pointer; color:var(--blue-900);
+  margin-right:2px;
+}
+.back:hover { border-color:var(--blue-600); background:var(--blue-050); }
+
+/* ---- Phase 5: the detail view ---- */
+.detail__cat {
+  display:inline-block;
+  font-size:12.5px; font-weight:650;
+  color:var(--pin,var(--blue-600));
+  margin-bottom:8px;
+}
+
+.detail__desc { font-size:14px; margin-bottom:14px; }
+.detail__desc.is-empty { color:var(--grey-600); font-style:italic; }
+
+.detail__facts {
+  border-top:1px solid var(--line);
+  margin-bottom:14px;
+}
+
+.fact {
+  display:flex; gap:12px;
+  padding:9px 0;
+  border-bottom:1px solid var(--line);
+  font-size:13.5px;
+}
+.fact__key { color:var(--grey-600); flex:0 0 110px; }
+.fact__val { min-width:0; word-break:break-word; }
+.fact__val code { font-family:Consolas,"Courier New",monospace; font-size:12.5px; }
+
+.actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+.primary {
+  border:0; border-radius:10px;
+  background:var(--blue-600); color:var(--white);
+  padding:11px 16px; font-size:14px; cursor:pointer;
+}
+.primary:hover { background:var(--blue-700); }
+
+.secondary {
+  border:1px solid var(--line); border-radius:10px;
+  background:var(--white); color:var(--blue-900);
+  padding:11px 16px; font-size:14px; cursor:pointer;
+}
+.secondary:hover { border-color:var(--blue-600); background:var(--blue-050); }
+
+/* ---- Phase 6: the directions form ---- */
+.route-form { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+
+.field { display:flex; flex-direction:column; gap:4px; }
+.field label { font-size:12.5px; color:var(--grey-600); }
+
+.field select {
+  font:inherit; color:inherit;
+  border:1px solid var(--line); border-radius:10px;
+  padding:11px 12px; background:var(--white); width:100%;
+}
+.field select:focus { outline:2px solid var(--blue-600); outline-offset:1px; }
+
+.swap {
+  align-self:flex-end;
+  border:1px solid var(--line); background:var(--white);
+  border-radius:8px; padding:5px 11px; font-size:15px; cursor:pointer;
+  color:var(--grey-600); margin:-4px 0;
+}
+.swap:hover { border-color:var(--blue-600); color:var(--blue-600); }
+
+.hint { font-size:12.5px; color:var(--grey-600); margin-bottom:14px; }
+
+.route-summary {
+  background:var(--blue-050);
+  border-radius:12px;
+  padding:14px 16px;
+  margin-bottom:12px;
+}
+.route-summary__big { font-size:24px; font-weight:700; letter-spacing:-.02em; }
+.route-summary__sub { font-size:13.5px; color:var(--grey-600); margin-top:2px; }
+
+.route-warning {
+  background:#fff8e6; border:1px solid #f0dca8; border-radius:10px;
+  padding:10px 12px; font-size:12.5px; color:#6a4e07; margin-bottom:12px;
+  line-height:1.45;
+}
+
+.steps { list-style:none; margin:0; padding:0; counter-reset:step; }
+
+.steps li {
+  display:flex; gap:12px;
+  padding:11px 0;
+  border-top:1px solid var(--line);
+  font-size:13.5px;
+}
+.steps li::before {
+  counter-increment:step;
+  content:counter(step);
+  flex:0 0 24px;
+  height:24px;
+  border-radius:50%;
+  background:var(--blue-050);
+  color:var(--blue-700);
+  font-size:12px; font-weight:650;
+  display:grid; place-items:center;
+}
+.steps .step__dist { margin-left:auto; color:var(--grey-600); font-size:12.5px; white-space:nowrap; }
+
+/* Route start and finish dots */
+.endpoint {
+  display:block; width:18px; height:18px;
+  border-radius:50%;
+  border:3px solid var(--white);
+  box-shadow:var(--shadow-card);
+}
+.endpoint--start { background:#12855a; }
+.endpoint--finish { background:var(--blue-600); }
+
+.spinner { font-size:13.5px; color:var(--grey-600); padding:14px 0; }
+
+/* =========================================================
+   Phases 7–10: location, category counts, saved places, info
+   ========================================================= */
+
+/* ---- Phase 7: the user's own position ---- */
+.me {
+  display:block; width:22px; height:22px;
+  border-radius:50%;
+  background:var(--blue-600);
+  border:3px solid var(--white);
+  box-shadow:0 0 0 1px rgba(20,84,184,.35), var(--shadow-card);
+}
+
+.tool--locate { font-weight:650; }
+.tool--locate svg { flex:0 0 auto; }
+.tool:disabled { opacity:.6; cursor:progress; }
+
+.locate-msg {
+  background:var(--blue-050);
+  border:1px solid var(--blue-100);
+  border-radius:10px;
+  padding:10px 12px;
+  font-size:12.5px;
+  color:var(--blue-700);
+  margin-bottom:12px;
+  line-height:1.45;
+}
+.locate-msg.is-error {
+  background:#fff8e6; border-color:#f0dca8; color:#6a4e07;
+}
+
+/* ---- Phase 8: counts on the category chips ---- */
+.chip__n {
+  display:inline-block;
+  margin-left:5px;
+  padding:0 5px;
+  border-radius:999px;
+  background:var(--blue-050);
+  color:var(--grey-600);
+  font-size:11px;
+  font-weight:650;
+}
+.chip[aria-pressed="true"] .chip__n {
+  background:rgba(255,255,255,.25);
+  color:var(--white);
+}
+.chip--saved { border-color:#e6cf8f; }
+
+/* ---- Phase 9: the save star ---- */
+.row-item { display:flex; align-items:stretch; gap:6px; }
+.row-item .card { flex:1; min-width:0; }
+
+.star {
+  flex:0 0 auto;
+  width:40px;
+  border:1px solid var(--line);
+  background:var(--white);
+  border-radius:10px;
+  font-size:17px;
+  line-height:1;
+  color:var(--grey-600);
+  cursor:pointer;
+}
+.star:hover { border-color:#d9b74e; color:#c79a1e; }
+.star.is-on { color:#d9a520; border-color:#e6cf8f; background:#fffaef; }
+
+/* ---- Phase 10: campus information ---- */
+.info { margin-bottom:22px; }
+.info h2 { font-size:16px; font-weight:700; margin-bottom:6px; letter-spacing:-.01em; }
+.info p { font-size:13.5px; margin-bottom:8px; }
+
+.info__places { list-style:none; margin:6px 0 0; padding:0; }
+.info__places li { border-top:1px solid var(--line); }
+
+.link {
+  border:0; background:none; padding:10px 0;
+  font:inherit; font-size:13.5px;
+  color:var(--blue-600); cursor:pointer; text-align:left; width:100%;
+}
+.link:hover { color:var(--blue-700); text-decoration:underline; }
+
+.info__source { font-size:11.5px; color:var(--grey-600); margin-top:8px; }
+
+.info__todo {
+  background:var(--blue-050);
+  border-radius:10px;
+  padding:11px 13px;
+  font-size:12.5px;
+  color:var(--grey-600);
+  line-height:1.5;
+}
+
+.muted { color:var(--grey-600); font-weight:400; }
+
+
+/* =========================================================
+   Phase 12: the install / update / offline bar
+   ========================================================= */
+.pwa-bar {
+  position:fixed;
+  left:12px; right:12px;
+  bottom:calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index:2000;
+  display:flex; align-items:center; gap:10px;
+  background:var(--blue-900);
+  color:var(--white);
+  border-radius:12px;
+  padding:12px 12px 12px 15px;
+  font-size:13.5px;
+  line-height:1.4;
+  box-shadow:var(--shadow-pop);
+}
+
+.pwa-bar span { flex:1; min-width:0; }
+
+.pwa-bar__action {
+  flex:0 0 auto;
+  border:0; border-radius:8px;
+  background:var(--white); color:var(--blue-900);
+  padding:8px 14px; font-size:13px; font-weight:650; cursor:pointer;
+}
+.pwa-bar__action:hover { background:var(--blue-050); }
+
+.pwa-bar__close {
+  flex:0 0 auto;
+  border:0; background:transparent; color:var(--white);
+  font-size:19px; line-height:1; padding:4px 6px; cursor:pointer; opacity:.75;
+}
+.pwa-bar__close:hover { opacity:1; }
+
+@media (min-width:961px) {
+  .pwa-bar { left:auto; right:20px; max-width:420px; }
+}
+
+[hidden] { display: none !important; }
+
+.search__mic { flex:none; width:34px; height:34px; margin-right:4px; border:0; border-radius:50%;
+  background:transparent; color:var(--blue-700); display:grid; place-items:center; cursor:pointer; }
+.search__mic:hover { background:var(--blue-050); }
+.search__mic.is-listening { background:#dc2626; color:#fff; animation:mic-pulse 1.2s infinite; }
+@keyframes mic-pulse { 0%{box-shadow:0 0 0 0 rgba(220,38,38,.5);} 100%{box-shadow:0 0 0 12px rgba(220,38,38,0);} }
+.voice-btn { margin:0 0 12px; padding:9px 14px; border:1px solid var(--line); border-radius:999px;
+  background:#fff; color:var(--blue-700); font:inherit; font-weight:600; cursor:pointer; }
+.voice-btn:hover { background:var(--blue-050); }
+
+/* ---------- Teardrop pins ---------- */
+.pin { display:block; position:relative; width:30px; height:30px; background:none;
+  border:0; padding:0; box-shadow:none; color:inherit; }
+.pin:hover { box-shadow:none; }
+.pin.is-selected { background:none; border:0; box-shadow:none; color:inherit; }
+.pin__drop { width:30px; height:30px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+  background:var(--pin,var(--blue-600)); border:2.5px solid #fff;
+  box-shadow:0 3px 8px rgba(15,23,42,.38); display:grid; place-items:center;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1); }
+.pin__emoji { transform:rotate(45deg); font-size:14px; line-height:1; }
+.pin:hover .pin__drop { transform:rotate(-45deg) scale(1.1); }
+.pin.is-selected .pin__drop { transform:rotate(-45deg) scale(1.28); box-shadow:0 0 0 4px rgba(20,84,184,.28), 0 4px 12px rgba(15,23,42,.45); }
+.pin.is-selected { z-index:900; }
+.pin__label { display:none; position:absolute; left:50%; bottom:44px; transform:translateX(-50%);
+  background:#fff; color:var(--blue-900); padding:4px 9px; border-radius:8px; font-size:12px;
+  font-weight:650; white-space:nowrap; box-shadow:var(--shadow-card); border:1px solid var(--line); }
+.pin.is-selected .pin__label, .labels-on .pin__label, .pin:hover .pin__label { display:block; }
+.pin__dot { display:none; }
+
+/* ---------- Richer place cards ---------- */
+.card { align-items:center; gap:12px; padding:11px 12px; border-radius:14px;
+  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+.card:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(15,23,42,.10); }
+.card__icon { width:44px; height:44px; border-radius:13px; font-size:21px;
+  background:color-mix(in srgb, var(--pin, var(--blue-600)) 15%, #fff);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--pin, var(--blue-600)) 25%, #fff); }
+.card__name { font-size:14.5px; line-height:1.25; }
+.card__cat { display:inline-block; font-size:11.5px; padding:1px 8px; border-radius:999px;
+  background:color-mix(in srgb, var(--pin, var(--blue-600)) 13%, #fff); }
+.card__chip { display:inline-block; margin-top:5px; font-size:11.5px; font-weight:600;
+  color:var(--grey-600); background:var(--grey-100, #f1f5f9); padding:2px 8px; border-radius:999px; }
+
+/* ---------- Floating route summary (phones) ---------- */
+.route-chip { position:absolute; left:12px; bottom:calc(var(--sheet-h) + 58px); z-index:700;
+  display:flex; align-items:center; gap:10px; padding:9px 12px 9px 14px; border:0;
+  border-radius:999px; background:var(--blue-900, #0f2a5c); color:#fff; font:inherit;
+  font-weight:650; font-size:13.5px; box-shadow:0 6px 18px rgba(15,23,42,.35); cursor:pointer; }
+.route-chip__cta { background:#fff; color:var(--blue-900, #0f2a5c); padding:3px 10px;
+  border-radius:999px; font-size:12px; }
+@media (min-width: 961px) { .route-chip { display:none !important; } }
+
+/* ---------- Dark mode ---------- */
+.campus-mask { fill:#f1f5f9; }
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --blue-900:#e8f0fc; --blue-700:#a7c4f4; --blue-600:#5a98f5;
+  --blue-100:#233a5c; --blue-050:#14233a;
+  --white:#0f1b2e; --grey-600:#9fb2cf; --line:#26374f;
+  --c-academic:#5a98f5; --c-residential:#a08af2; --c-food:#e0903a; --c-health:#f0686d;
+  --c-religious:#3fb6c1; --c-sports:#3fc08c; --c-admin:#8ea3c8; --c-transport:#d28a4c;
+  --c-services:#c46bc9; --c-recreation:#6cb86c;
+  --shadow-card:0 1px 2px rgba(0,0,0,.35);
+  --shadow-pop:0 8px 24px rgba(0,0,0,.5);
+  --shadow-sheet:0 -6px 24px rgba(0,0,0,.5);
+}
+html[data-theme="dark"] body { background:var(--white); }
+html[data-theme="dark"] #map-canvas, html[data-theme="dark"] .leaflet-container { background:#0b1422; }
+html[data-theme="dark"] .leaflet-tile-pane {
+  filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.75);
+}
+html[data-theme="dark"] .campus-mask { fill:#0b1422; }
+html[data-theme="dark"] .leaflet-control-attribution { background:rgba(15,27,46,.8); color:#9fb2cf; }
+html[data-theme="dark"] .leaflet-control-attribution a { color:#8db4ff; }
+html[data-theme="dark"] .sheet__bar { background:#3a4d6b; }
+html[data-theme="dark"] .pin__label { background:var(--white); color:var(--blue-900); border-color:var(--line); }
+html[data-theme="dark"] .card__icon { background:color-mix(in srgb, var(--pin, var(--blue-600)) 22%, var(--white)); }
+html[data-theme="dark"] .card__cat { background:color-mix(in srgb, var(--pin, var(--blue-600)) 20%, var(--white)); }
+html[data-theme="dark"] .card__chip { background:var(--blue-050); color:var(--grey-600); }
+html[data-theme="dark"] .route-chip { background:#2b4a7a; color:#fff; }
+html[data-theme="dark"] .route-chip__cta { background:#fff; color:#0a2540; }
+html[data-theme="dark"] .voice-btn { background:var(--blue-050); }
+html[data-theme="dark"] .star.is-on { background:#3a2f12; }
+html[data-theme="dark"] .stamp { background:rgba(15,27,46,.92); color:var(--blue-900); }
+
+.toast { position:fixed; left:50%; bottom:calc(var(--sheet-h) + 20px); transform:translateX(-50%);
+  z-index:3000; max-width:88vw; padding:10px 16px; border-radius:999px; background:#0a2540; color:#fff;
+  font-size:13px; font-weight:600; box-shadow:0 8px 24px rgba(0,0,0,.35); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; transition:opacity .45s; }
+.toast.is-out { opacity:0; }
+
+/* ---------- Class tab ---------- */
+.cls__h { margin:0 0 4px; font-size:16px; } .cls__p { color:var(--grey-600); font-size:13.5px; margin:0 0 12px; }
+.cls__head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.cls__row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.cls__form { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+.cls__form input, .cls__form select { padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+  background:var(--white); color:var(--blue-900); font:inherit; }
+.cls__two { display:flex; gap:8px; } .cls__two label { flex:1; font-size:12px; color:var(--grey-600); display:flex; flex-direction:column; gap:3px; }
+.cls__rep { margin-top:6px; } .cls__rep summary { cursor:pointer; color:var(--blue-600); font-weight:600; margin-bottom:8px; }
+.cls__notice { background:#fff8e6; border:1px solid #f0dca8; color:#6a4e07; padding:10px 12px; border-radius:10px; font-size:13px; }
+.cls__hint { background:var(--blue-050); padding:10px 12px; border-radius:10px; font-size:13.5px; margin:0 0 12px; }
+.cls__day { margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--grey-600); }
+.cls__foot { margin-top:16px; } .linklike { background:none; border:0; color:var(--grey-600); text-decoration:underline; font:inherit; cursor:pointer; }
+.slot { display:flex; gap:12px; padding:11px 12px; margin-bottom:8px; border:1px solid var(--line); border-radius:14px; background:var(--white); }
+.slot__time { min-width:44px; font-weight:700; font-size:14px; } .slot__time small { color:var(--grey-600); font-weight:500; }
+.slot__title, .slot__where, .slot__note { font-size:12.5px; color:var(--grey-600); } .slot__note { color:#b9660b; }
+.slot--cancelled { opacity:.6; } .slot--cancelled .slot__main b { text-decoration:line-through; }
+.slot__flag { font-size:11px; font-weight:700; padding:1px 8px; border-radius:999px; background:#fde9c9; color:#8a4b00; }
+.slot__flag--x { background:#fbd5d5; color:#9b1c1c; }
+.slot__acts { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+.slot__acts button { border:1px solid var(--line); background:var(--white); color:var(--blue-700); font:inherit; font-size:12px;
+  font-weight:600; padding:4px 10px; border-radius:999px; cursor:pointer; }

@@ -1,0 +1,20 @@
+{
+  "name": "Babnav — Babcock campus navigation",
+  "short_name": "Babnav",
+  "description": "Find your way around Babcock University. Search buildings, get walking directions, and see where you are on campus.",
+  "id": "/babnav/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#eef3fb",
+  "theme_color": "#1454b8",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["navigation", "education", "travel"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

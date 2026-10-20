@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Babnav — import places from OpenStreetMap</title>
+<style>
+  :root {
+    --blue-900:#0a2540; --blue-700:#123e7c; --blue-600:#1454b8;
+    --blue-100:#d9e5f7; --blue-050:#eef3fb; --line:#dde5f1; --grey-600:#5b6b83;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:24px;
+    font-family:"Segoe UI Variable Text","Segoe UI",system-ui,Arial,sans-serif;
+    color:var(--blue-900); background:var(--blue-050); font-size:15px; line-height:1.5;
+  }
+  .wrap { max-width:1080px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; letter-spacing:-.02em; }
+  .sub { color:var(--grey-600); font-size:14px; margin:0 0 20px; }
+  .panel {
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:16px; margin-bottom:16px;
+  }
+  h2 { font-size:16px; margin:0 0 10px; }
+  label { display:block; font-size:12.5px; color:var(--grey-600); margin-bottom:3px; }
+  input, select, textarea {
+    font:inherit; color:inherit;
+    border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:#fff;
+  }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--blue-600); outline-offset:1px; }
+  .bbox { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  button {
+    font:inherit; border:0; border-radius:8px; padding:10px 16px;
+    background:var(--blue-600); color:#fff; cursor:pointer;
+  }
+  button:hover { background:var(--blue-700); }
+  button.ghost { background:#fff; color:var(--blue-900); border:1px solid var(--line); }
+  button.ghost:hover { background:var(--blue-050); }
+  button:disabled { background:var(--blue-100); color:var(--grey-600); cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .status { font-size:13.5px; color:var(--grey-600); margin-top:10px; }
+  .status.err { color:#b3261e; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th { text-align:left; font-weight:650; padding:8px 6px; border-bottom:1px solid var(--line); font-size:12.5px; color:var(--grey-600); }
+  td { padding:6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  td.tags { font-size:11.5px; color:var(--grey-600); font-family:Consolas,monospace; }
+  .coord { font-family:Consolas,monospace; font-size:12px; white-space:nowrap; }
+  textarea {
+    width:100%; height:320px; font-family:Consolas,"Courier New",monospace;
+    font-size:12.5px; line-height:1.5; white-space:pre; overflow:auto;
+  }
+  .note {
+    background:#fff8e6; border:1px solid #f0dca8; border-radius:10px;
+    padding:12px 14px; font-size:13.5px; color:#6a4e07; margin-bottom:16px;
+  }
+  .count { font-size:13px; color:var(--grey-600); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Import places from OpenStreetMap</h1>
+  <p class="sub">
+    A build tool, not part of Babnav. It asks OpenStreetMap what is mapped
+    inside a box around campus and turns the answer into <code>js/data.js</code> entries.
+  </p>
+
+  <div class="note">
+    <strong>Check what comes back.</strong> OpenStreetMap is edited by volunteers.
+    A building may be misnamed, out of date, or drawn in the wrong spot. Treat
+    this as a fast first draft, then verify the ones that matter before setting
+    <code>verified: true</code>.
+  </div>
+
+  <div class="panel">
+    <h2>1. Area to search</h2>
+    <div class="bbox">
+      <div><label for="south">South (min lat)</label><input id="south" value="6.8850" style="width:100%"></div>
+      <div><label for="west">West (min lng)</label><input id="west" value="3.7080" style="width:100%"></div>
+      <div><label for="north">North (max lat)</label><input id="north" value="6.9050" style="width:100%"></div>
+      <div><label for="east">East (max lng)</label><input id="east" value="3.7290" style="width:100%"></div>
+    </div>
+    <div class="row">
+      <button id="fetch">Fetch from OpenStreetMap</button>
+      <button class="ghost" id="show-query">Show the query</button>
+      <span class="count" id="status"></span>
+    </div>
+    <textarea id="query" hidden style="height:150px; margin-top:12px"></textarea>
+  </div>
+
+  <div class="panel" id="results-panel" hidden>
+    <h2>2. Choose what to keep <span class="count" id="picked"></span></h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="filter" placeholder="Find a name in the results…" style="min-width:240px">
+      <label class="row" style="gap:6px; font-size:13.5px; color:var(--blue-900)">
+        <input type="checkbox" id="show-all" style="width:auto"> Show roads, paths and boundaries too
+      </label>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="ghost" id="select-all">Select all shown</button>
+      <button class="ghost" id="select-none">Select none</button>
+      <button class="ghost" id="select-buildings">Buildings only</button>
+    </div>
+    <div style="max-height:520px; overflow:auto">
+      <table id="results"></table>
+    </div>
+  </div>
+
+  <div class="panel" id="output-panel" hidden>
+    <h2>3. Paste this into js/data.js</h2>
+    <p class="sub" style="margin-bottom:10px">
+      Replace the whole <code>const PLACES = [ … ];</code> block with this.
+    </p>
+    <div class="row" style="margin-bottom:10px">
+      <button id="generate">Generate</button>
+      <button class="ghost" id="copy">Copy</button>
+      <button class="ghost" id="download">Download as places.js</button>
+    </div>
+    <textarea id="output" readonly></textarea>
+  </div>
+
+</div>
+
+<script>
+/*
+  How this works:
+    1. Build an Overpass QL query for everything named inside the box
+    2. POST it to an Overpass API endpoint
+    3. Guess a Babnav category from each feature's OSM tags
+    4. Let you tick, untick and re-categorise
+    5. Emit a PLACES array ready to paste into js/data.js
+
+  Overpass is a read-only query service for OpenStreetMap data. It is free and
+  rate-limited, so run this once, save the result, and do not call it from the
+  app itself.
+*/
+
+const ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter"
+];
+
+let features = [];
+
+function buildQuery() {
+  const s = document.getElementById("south").value.trim();
+  const w = document.getElementById("west").value.trim();
+  const n = document.getElementById("north").value.trim();
+  const e = document.getElementById("east").value.trim();
+  const bbox = "(" + s + "," + w + "," + n + "," + e + ")";
+
+  // Ask for EVERYTHING that has a name inside the box. Filtering by tag key
+  // in the query itself was the old mistake: a hall tagged with something
+  // unexpected simply never came back. Now we take the lot and sort it out
+  // in the browser, where you can see what was dropped and why.
+  return '[out:json][timeout:180];\n' +
+         '(\n' +
+         '  nwr["name"]' + bbox + ';\n' +
+         ');\n' +
+         'out center tags;';
+}
+
+/*
+  Roads, paths, rivers and boundaries all carry names too, and none of them
+  belong in a place list. This decides whether a result is a PLACE (somewhere
+  you can go) or INFRASTRUCTURE (something you travel along or a line on a
+  map). Nothing is thrown away — infrastructure is just hidden until you tick
+  "Show everything".
+*/
+function isPlace(t) {
+  // A named building is always a place, whatever else it is tagged as.
+  if (t.building && t.building !== "no") return true;
+
+  // Bus stops and platforms are places you stand; other highways are not.
+  if (t.highway) {
+    return t.highway === "bus_stop" || t.highway === "platform" ||
+           t.highway === "elevator";
+  }
+
+  const infrastructure = ["waterway", "railway", "barrier", "boundary", "power",
+                          "natural", "route", "man_made:pipeline", "admin_level",
+                          "place"];
+  for (let i = 0; i < infrastructure.length; i++) {
+    if (t[infrastructure[i]]) return false;
+  }
+
+  const placeKeys = ["amenity", "leisure", "shop", "office", "tourism",
+                     "healthcare", "craft", "emergency", "public_transport",
+                     "landuse", "sport", "club", "government", "historic",
+                     "man_made", "aeroway"];
+  for (let i = 0; i < placeKeys.length; i++) {
+    if (t[placeKeys[i]]) return true;
+  }
+
+  // Named, not a road, not a river, no other clue. Keep it — on a campus this
+  // is usually a building someone named but did not tag further.
+  return true;
+}
+
+// Map OSM tags onto Babnav categories. Best guess only — you can override
+// every row in the table.
+function guessCategory(t) {
+  const b = (t.building || "").toLowerCase();
+  const a = (t.amenity || "").toLowerCase();
+  const l = (t.leisure || "").toLowerCase();
+  const name = (t.name || "").toLowerCase();
+
+  if (a === "place_of_worship" || b === "church" || b === "chapel" ||
+      b === "cathedral" || name.includes("chapel") || name.includes("church")) return "religious";
+
+  if (a === "library" || b === "library" || name.includes("library")) return "academic";
+
+  if (["hospital", "clinic", "doctors", "pharmacy", "dentist"].indexOf(a) > -1 ||
+      b === "hospital" || name.includes("clinic") || name.includes("health") ||
+      name.includes("hospital")) return "health";
+
+  if (["restaurant", "cafe", "fast_food", "canteen", "food_court", "bar"].indexOf(a) > -1 ||
+      name.includes("cafeteria") || name.includes("canteen") ||
+      name.includes("dining")) return "food";
+
+  if (["pitch", "sports_centre", "stadium", "track", "fitness_centre", "swimming_pool"].indexOf(l) > -1 ||
+      b === "stadium" || b === "sports_hall" || name.includes("sport") ||
+      name.includes("stadium") || name.includes("gym")) return "sports";
+
+  if (["park", "garden", "playground"].indexOf(l) > -1) return "recreation";
+
+  if (t.highway === "bus_stop" || a === "bus_station" || t.public_transport ||
+      a === "parking" || name.includes("shuttle") || name.includes("bus stop")) return "transport";
+
+  if (["dormitory", "residential", "apartments", "house", "hostel"].indexOf(b) > -1 ||
+      a === "dormitory" || t.tourism === "hostel" || t.tourism === "hotel" ||
+      name.includes("hostel") ||
+      (name.includes(" hall") && b !== "university")) return "residential";
+
+  if (t.shop || ["bank", "atm", "post_office", "marketplace", "bureau_de_change",
+                 "fuel", "laundry"].indexOf(a) > -1 ||
+      name.includes("mall") || name.includes("shop") || name.includes("store")) return "services";
+
+  if (t.office || a === "townhall" ||
+      name.includes("admin") || name.includes("registry") ||
+      name.includes("bursary") || name.includes("senate")) return "admin";
+
+  if (["school", "college", "university", "kindergarten"].indexOf(a) > -1 ||
+      ["university", "school", "college", "classroom"].indexOf(b) > -1 ||
+      name.includes("faculty") || name.includes("school of") ||
+      name.includes("lecture") || name.includes("academic") ||
+      name.includes("auditorium") || name.includes("theatre")) return "academic";
+
+  return "academic";
+}
+
+function slugify(name) {
+  return name.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+function keywordsFor(name, t) {
+  const stop = ["the", "and", "of", "for", "hall", "building"];
+  const words = name.toLowerCase().split(/[^a-z0-9]+/)
+    .filter(function (w) { return w.length > 2 && stop.indexOf(w) === -1; });
+
+  const extra = [];
+  if (t.building) extra.push(t.building.replace(/_/g, " "));
+  if (t.amenity) extra.push(t.amenity.replace(/_/g, " "));
+
+  const all = words.concat(extra).filter(function (w, i, arr) {
+    return w && arr.indexOf(w) === i;
+  });
+  return all.slice(0, 6);
+}
+
+function tagSummary(t) {
+  return ["building", "amenity", "leisure", "shop", "office", "highway"]
+    .filter(function (k) { return t[k]; })
+    .map(function (k) { return k + "=" + t[k]; })
+    .join(" ") || "—";
+}
+
+function setStatus(text, isError) {
+  const s = document.getElementById("status");
+  s.textContent = text;
+  s.className = "count status" + (isError ? " err" : "");
+}
+
+async function fetchOverpass() {
+  const query = buildQuery();
+  document.getElementById("query").value = query;
+
+  const button = document.getElementById("fetch");
+  button.disabled = true;
+  setStatus("Asking OpenStreetMap… this can take 20–60 seconds.");
+
+  let data = null;
+  let lastError = "";
+
+  for (const url of ENDPOINTS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query)
+      });
+      if (!res.ok) { lastError = "HTTP " + res.status + " from " + url; continue; }
+      data = await res.json();
+      break;
+    } catch (err) {
+      lastError = err.message + " (" + url + ")";
+    }
+  }
+
+  button.disabled = false;
+
+  if (!data) {
+    setStatus("Could not reach any Overpass server. " + lastError +
+              " Check your connection, or run the query by hand at overpass-turbo.eu.", true);
+    return;
+  }
+
+  const raw = data.elements || [];
+
+  features = raw.map(function (elem) {
+    const t = elem.tags || {};
+    const lat = elem.lat !== undefined ? elem.lat : (elem.center && elem.center.lat);
+    const lng = elem.lon !== undefined ? elem.lon : (elem.center && elem.center.lon);
+    if (!t.name || lat === undefined || lng === undefined) return null;
+
+    const place = isPlace(t);
+
+    return {
+      keep: place,          // infrastructure starts unticked
+      place: place,
+      name: t.name,
+      lat: lat,
+      lng: lng,
+      category: guessCategory(t),
+      tags: t,
+      type: elem.type,
+      osmId: elem.type + "/" + elem.id
+    };
+  }).filter(Boolean);
+
+  /*
+    A building is often mapped twice: once as a way (the outline) and once as
+    a node (the label point). Those are the same thing and one should go.
+
+    But two genuinely different places can share a name — a hall and its
+    annexe, a shop and the block it sits in. So we only merge duplicates when
+    the name matches AND they are within about 60 metres of each other.
+    Ways win, because an outline's centre is a better position than a node
+    dropped by hand.
+  */
+  features.sort(function (a, b) {
+    if (a.type === b.type) return 0;
+    return a.type === "way" ? -1 : 1;
+  });
+
+  const kept = [];
+  features.forEach(function (f) {
+    const clash = kept.find(function (k) {
+      if (k.name.toLowerCase() !== f.name.toLowerCase()) return false;
+      const dLat = (k.lat - f.lat) * 111320;
+      const dLng = (k.lng - f.lng) * 111320 * Math.cos(k.lat * Math.PI / 180);
+      return Math.sqrt(dLat * dLat + dLng * dLng) < 60;
+    });
+    if (!clash) kept.push(f);
+  });
+  features = kept;
+
+  features.sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+  const placeCount = features.filter(function (f) { return f.place; }).length;
+  setStatus("Overpass returned " + raw.length + " elements. " +
+            features.length + " have a name and a position; " +
+            placeCount + " look like places. " +
+            (features.length - placeCount) +
+            " look like roads, paths or boundaries and start unticked.");
+  renderResults();
+}
+
+const CATS = ["academic", "residential", "food", "health", "religious",
+              "sports", "admin", "transport", "services", "recreation"];
+
+function visibleRows() {
+  const showAll = document.getElementById("show-all").checked;
+  const needle = document.getElementById("filter").value.trim().toLowerCase();
+
+  return features
+    .map(function (f, i) { return { f: f, i: i }; })
+    .filter(function (row) {
+      if (!showAll && !row.f.place) return false;
+      if (needle && row.f.name.toLowerCase().indexOf(needle) === -1) return false;
+      return true;
+    });
+}
+
+function renderResults() {
+  const table = document.getElementById("results");
+  document.getElementById("results-panel").hidden = false;
+  document.getElementById("output-panel").hidden = false;
+
+  let html = "<thead><tr><th style='width:34px'></th><th>Name</th>" +
+             "<th style='width:150px'>Category</th><th style='width:170px'>Coordinates</th>" +
+             "<th>OSM tags</th></tr></thead><tbody>";
+
+  visibleRows().forEach(function (row) {
+    const f = row.f;
+    const i = row.i;
+    const options = CATS.map(function (c) {
+      return '<option value="' + c + '"' + (c === f.category ? " selected" : "") + ">" + c + "</option>";
+    }).join("");
+
+    html += "<tr>" +
+      '<td><input type="checkbox" data-i="' + i + '" class="keep"' + (f.keep ? " checked" : "") + "></td>" +
+      "<td>" + f.name + "</td>" +
+      '<td><select data-i="' + i + '" class="cat">' + options + "</select></td>" +
+      '<td class="coord">' + f.lat.toFixed(6) + ", " + f.lng.toFixed(6) + "</td>" +
+      '<td class="tags">' + f.type + " \u00B7 " + tagSummary(f.tags) + "</td>" +
+      "</tr>";
+  });
+
+  table.innerHTML = html + "</tbody>";
+  updatePicked();
+}
+
+function updatePicked() {
+  const n = features.filter(function (f) { return f.keep; }).length;
+  const shown = visibleRows().length;
+  document.getElementById("picked").textContent =
+    "— " + n + " selected, " + shown + " shown of " + features.length;
+}
+
+function generate() {
+  const chosen = features.filter(function (f) { return f.keep; });
+
+  if (chosen.length === 0) {
+    document.getElementById("output").value = "Nothing selected.";
+    return;
+  }
+
+  const usedIds = {};
+  const body = chosen.map(function (f) {
+    let id = slugify(f.name);
+    if (usedIds[id]) { id = id + "-" + (usedIds[id] + 1); }
+    usedIds[slugify(f.name)] = (usedIds[slugify(f.name)] || 0) + 1;
+
+    const kw = keywordsFor(f.name, f.tags)
+      .map(function (k) { return '"' + k + '"'; }).join(", ");
+
+    return "  {\n" +
+      '    id: "' + id + '",\n' +
+      '    name: "' + f.name.replace(/"/g, '\\"') + '",\n' +
+      '    category: "' + f.category + '",\n' +
+      "    lat: " + f.lat.toFixed(6) + ", lng: " + f.lng.toFixed(6) + ",\n" +
+      '    description: "",\n' +
+      "    keywords: [" + kw + "],\n" +
+      '    source: "osm",\n' +
+      '    osmId: "' + f.osmId + '",\n' +
+      "    verified: false\n" +
+      "  }";
+  }).join(",\n");
+
+  document.getElementById("output").value =
+    "/* Generated from OpenStreetMap on " + new Date().toISOString().slice(0, 10) + ".\n" +
+    "   Data (c) OpenStreetMap contributors, ODbL. Positions come from OSM and\n" +
+    "   are far better than placeholders, but they are still community data:\n" +
+    "   set verified: true only for the ones you have checked yourself.\n" +
+    "   Descriptions are left empty on purpose — write your own. */\n" +
+    "const PLACES = [\n" + body + "\n];\n";
+}
+
+document.getElementById("fetch").addEventListener("click", fetchOverpass);
+
+document.getElementById("show-query").addEventListener("click", function () {
+  const box = document.getElementById("query");
+  box.value = buildQuery();
+  box.hidden = !box.hidden;
+});
+
+document.getElementById("results").addEventListener("change", function (event) {
+  const i = event.target.dataset.i;
+  if (i === undefined) return;
+
+  if (event.target.classList.contains("keep")) {
+    features[i].keep = event.target.checked;
+    updatePicked();
+  }
+  if (event.target.classList.contains("cat")) {
+    features[i].category = event.target.value;
+  }
+});
+
+document.getElementById("select-all").addEventListener("click", function () {
+  visibleRows().forEach(function (row) { row.f.keep = true; });
+  renderResults();
+});
+
+document.getElementById("select-none").addEventListener("click", function () {
+  visibleRows().forEach(function (row) { row.f.keep = false; });
+  renderResults();
+});
+
+document.getElementById("filter").addEventListener("input", renderResults);
+document.getElementById("show-all").addEventListener("change", renderResults);
+
+document.getElementById("select-buildings").addEventListener("click", function () {
+  features.forEach(function (f) { f.keep = !!f.tags.building; });
+  renderResults();
+});
+
+document.getElementById("generate").addEventListener("click", generate);
+
+document.getElementById("copy").addEventListener("click", function () {
+  const out = document.getElementById("output");
+  out.select();
+  navigator.clipboard.writeText(out.value).then(function () {
+    document.getElementById("copy").textContent = "Copied";
+    setTimeout(function () { document.getElementById("copy").textContent = "Copy"; }, 1500);
+  }).catch(function () {
+    document.getElementById("copy").textContent = "Select the text and copy it";
+  });
+});
+
+document.getElementById("download").addEventListener("click", function () {
+  const blob = new Blob([document.getElementById("output").value], { type: "text/javascript" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "places.js";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>
